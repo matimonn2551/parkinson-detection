@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
 
 # 1. ตั้งค่าโครงสร้างหน้าเว็บแบบขยายเต็มจอ
 st.set_page_config(
@@ -10,12 +11,15 @@ st.set_page_config(
     layout="wide"
 )
 
-# 2. ปรับตัวสะกดเป็น unsafe_allow_html=True (ไม่มีตัว e) ถูกต้องตาม Logs แจ้งเตือน
+# Configuration สำหรับระบบ WebRTC ผ่านเซิร์ฟเวอร์อินเทอร์เน็ตสาธารณะ
+RTC_CONFIGURATION = RTCConfiguration(
+    {"iceServers": [{"urls": ["stun:://google.com"]}]}
+)
+
+# 2. ฝังโค้ด CSS สำหรับดีไซน์หน้าเว็บให้สวยงาม โค้งมน มีมิติ
 st.markdown("""
     <style>
-        .main {
-            background-color: #fcfcfd;
-        }
+        .main { background-color: #fcfcfd; }
         .header-box {
             background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
             padding: 2.5rem;
@@ -52,12 +56,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. ส่วนหัวเว็บไล่เฉดสี ปรับตัวสะกดให้ถูกต้อง
+# 3. ส่วนหัวเว็บไล่เฉดสีพรีเมียม
 st.markdown("""
     <div class="header-box">
         <h1>Parkinson Motion Analytics</h1>
         <p style="font-size: 1.1rem; opacity: 0.85; margin: 0;">
-            นวัตกรรมคัดกรองและบันทึกแนวโน้มสุขภาพของระบบสั่งการกล้ามเนื้อมือผ่านกล้องวิดีโอทั่วไป
+            นวัตกรรมคัดกรองและบันทึกแนวโน้มสุขภาพของระบบสั่งการกล้ามเนื้อมือผ่านกล้องวิดีโอทั่วไปออนไลน์ 24 ชม.
         </p>
     </div>
 """, unsafe_allow_html=True)
@@ -65,51 +69,28 @@ st.markdown("""
 # สร้างพื้นที่แบ่งฝั่ง ซ้าย-ขวา
 col_left, col_right = st.columns([1, 1.1], gap="large")
 
-with col_left:
-    st.markdown("### 📸 หน้าต่างควบคุมระบบกล้อง")
-    
-    if "detecting" not in st.session_state:
-        st.session_state.detecting = False
-    if "distances" not in st.session_state:
-        st.session_state.distances = []
-    if "timestamps" not in st.session_state:
-        st.session_state.timestamps = []
+# ตัวเก็บข้อมูลระยะห่างที่เกิดขึ้นระหว่างรันระบบเว็บ
+if "distances" not in st.session_state:
+    st.session_state.distances = []
+if "timestamps" not in st.session_state:
+    st.session_state.timestamps = []
 
-    # ปุ่มควบคุมหน้าเว็บขนาดใหญ่
-    btn_col1, btn_col2 = st.columns(2)
-    with btn_col1:
-        if st.button("เปิดกล้องเริ่มทดสอบ", type="primary", use_container_width=True):
-            st.session_state.detecting = True
-            st.session_state.distances = []
-            st.session_state.timestamps = []
-            st.rerun()
-    with btn_col2:
-        if st.button("กดเพื่อหยุดและประมวลผล", type="secondary", use_container_width=True):
-            st.session_state.detecting = False
+# คลาสประมวลผลวิดีโอสดในระดับพิกเซลบนระบบอินเทอร์เน็ต (WebRTC Video Processor)
+class ParkinsonVideoProcessor(VideoProcessorBase):
+    def __init__(self):
+        self.start_time = time.time()
 
-    # พื้นที่แสดงผลวิดีโอ
-    FRAME_WINDOW = st.image([])
-    
-    if not st.session_state.detecting and len(st.session_state.distances) == 0:
-        st.info("ระบบพร้อมใช้งาน กรุณากดปุ่มสีน้ำเงินเพื่อเปิดระบบกล้องบันทึกภาพ")
-
-# ทำงานดึงภาพจากกล้อง
-if st.session_state.detecting:
-    cap = cv2.VideoCapture(0)
-    start_time = time.time()
-    
-    while st.session_state.detecting:
-        ret, frame = cap.read()
-        if not ret: break
-            
-        frame = cv2.flip(frame, 1)
-        h, w, c = frame.shape
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        img = cv2.flip(img, 1)
+        h, w, c = img.shape
         
-        # วาดกรอบเป้าหมายสีเขียวนีออน
+        # 1. กำหนดกรอบเป้าหมายสีเขียวนีออน
         x1, y1, x2, y2 = int(w*0.35), int(h*0.25), int(w*0.65), int(h*0.75)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (57, 255, 20), 2)
+        cv2.rectangle(img, (x1, y1), (x2, y2), (57, 255, 20), 2)
         
-        roi = frame[y1:y2, x1:x2]
+        # 2. วิเคราะห์โครงสร้างความหนาแน่นพิกเซลผิวเนื้อจริง
+        roi = img[y1:y2, x1:x2]
         gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         blur_roi = cv2.GaussianBlur(gray_roi, (21, 21), 0)
         _, thresh = cv2.threshold(blur_roi, 100, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -117,23 +98,35 @@ if st.session_state.detecting:
         pixel_spread = np.sum(thresh == 255) / 100
         actual_distance = max(10, min(180, int(pixel_spread * 0.4)))
         
-        current_time = time.time() - start_time
+        current_time = time.time() - self.start_time
+        
+        # ส่งค่ากลับไปเก็บในระบบส่วนกลางแบบปลอดภัย
         st.session_state.distances.append(actual_distance)
         st.session_state.timestamps.append(current_time)
         
-        cv2.putText(frame, f"Tracking... {actual_distance} px", (20, 40),
+        cv2.putText(img, f"Tracking: {actual_distance} px", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (57, 255, 20), 2)
         
-        FRAME_WINDOW.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        time.sleep(0.01)
-        
-    cap.release()
+        return frame.from_ndarray(img, format="bgr24")
+
+with col_left:
+    st.markdown("### 📸 ระบบกล้องอัจฉริยะผ่านเว็บ (Webcam Terminal)")
+    st.info("กรุณากดปุ่ม START ด้านล่าง และกดยอมรับ (Allow) เพื่อให้เบราว์เซอร์เปิดกล้องเว็บแคมของคุณ")
+    
+    # ตัวเปิดกล้องยุคใหม่ ทำงานบนระบบคลาวด์ได้อย่างถูกต้อง
+    ctx = webrtc_streamer(
+        key="parkinson-screening",
+        video_processor_factory=ParkinsonVideoProcessor,
+        rtc_configuration=RTC_CONFIGURATION,
+        media_stream_constraints={"video": True, "audio": False},
+    )
 
 # ฝั่งขวา: แสดงผลรายงานและการวิเคราะห์แบบ Dashboard
 with col_right:
     st.markdown("### 📈 สรุปรายงานการวิเคราะห์พฤติกรรม")
     
-    if not st.session_state.detecting and len(st.session_state.distances) > 30:
+    # ตรวจสอบปุ่มหยุดทำงานของกล้องเพื่อทำการวิเคราะห์
+    if ctx.state.playing == False and len(st.session_state.distances) > 30:
         distances = st.session_state.distances
         timestamps = st.session_state.timestamps
         
@@ -146,7 +139,6 @@ with col_right:
         is_at_risk = amplitude_decrement > 12
         confidence = min(98, int(60 + (amplitude_decrement * 2.5))) if is_at_risk else max(5, int(10 + rhythm_variance*0.1))
         
-        # แสดงค่าดัชนีคณิตศาสตร์ผ่านโมดูล Metric ดีไซน์สวยงาม
         m_col1, m_col2 = st.columns(2)
         with m_col1:
             st.metric(label="ดัชนีการอ่อนแรงของนิ้วมือ (Decrement Index)", value=f"{amplitude_decrement:.2f}")
@@ -155,7 +147,6 @@ with col_right:
             
         st.write("")
         
-        # แสดงผลลัพธ์ผ่านบล็อกกล่อง HTML ที่ปรับแต่งตัวสะกดเรียบร้อย
         if is_at_risk:
             st.markdown(f"""
                 <div class="result-card-risk">
@@ -180,7 +171,6 @@ with col_right:
         st.write("")
         st.markdown("**กราฟแสดงทิศทางการกางนิ้วตามจริง (Movement Trace Graph)**")
         
-        # พลอตกราฟ
         fig, ax = plt.subplots(figsize=(10, 4.5))
         ax.plot(timestamps, distances, color='#2563eb', linewidth=2.5)
         ax.set_xlabel("Time (Seconds)", fontsize=9, color="#64748b")
@@ -188,9 +178,7 @@ with col_right:
         ax.grid(True, linestyle='--', alpha=0.3)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_color('#cbd5e1')
-        ax.spines['bottom'].set_color('#cbd5e1')
         st.pyplot(fig)
         
-    elif not st.session_state.detecting:
-        st.caption("หลังจากทำการทดสอบและกดปุ่มประมวลผลเสร็จสิ้น หน้าต่างกราฟและสถิติประเมินแบบละเอียดจะดีดขึ้นตรงนี้ทันที")
+    else:
+        st.caption("ระบบพร้อมประมวลผล เมื่อคุณกดปุ่ม STOP ที่หน้าต่างกล้องเพื่อสิ้นสุดการทดสอบ รายงานและกราฟวิเคราะห์โรคจะดีดขึ้นแสดงผลตรงนี้ทันที")
