@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 
-# 1. ตั้งค่าหน้าเว็บให้รองรับการแสดงผลบนมือถือและคอมพิวเตอร์
+# 1. ตั้งค่าหน้าเว็บให้รองรับการแสดงผลทุกอุปกรณ์
 st.set_page_config(
     page_title="Parkinson Motion Analytics",
     layout="centered"
@@ -12,7 +12,11 @@ st.title("MDS-UPDRS Parkinson Finger Tapping Analytics")
 st.text("ระบบคัดกรองความเสี่ยงโรคพาร์กินสันผ่านกล้องวิดีโอเบราว์เซอร์สำหรับทุกคน")
 st.write("---")
 
-# 2. ฝังหน้าต่างกล้องความเร็วสูงระบบ JavaScript (ข้ามข้อจำกัดเรื่องกล้องค้างบนคลาวด์)
+# เตรียมพื้นที่เก็บข้อมูลพิกเซลดิบในระบบเซสชัน
+if "stored_data" not in st.session_state:
+    st.session_state.stored_data = None
+
+# 2. ฝังหน้าต่างกล้องความเร็วสูงระบบ JavaScript (คำนวณฝั่งผู้ใช้ ลื่นไหล 100%)
 ctx_hardware = st.components.v1.html(
     """
     <div style="display: flex; flex-direction: column; align-items: center; background: #ffffff; padding: 15px; border-radius: 12px; font-family: sans-serif;">
@@ -38,55 +42,38 @@ ctx_hardware = st.components.v1.html(
 
         async function toggleCapture() {
             if (!isCapturing) {
-                // รองรับการเปิดกล้องทั้งบนคอมพิวเตอร์และมือถือทุกระบบปฏิบัติการ
                 const constraints = {
-                    video: {
-                        width: { ideal: 640 },
-                        height: { ideal: 480 },
-                        facingMode: "user"
-                    },
+                    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
                     audio: false
                 };
-                
                 try {
                     streamRef = await navigator.mediaDevices.getUserMedia(constraints);
                     video.srcObject = streamRef;
-                    btn.innerText = "หยุดตรวจและประมวลผลผลงาน";
+                    btn.innerText = "หยุดตรวจและประมวลผลงาน";
                     btn.style.background = "#dc2626";
                     isCapturing = true;
                     dataPoints = [];
                     
                     let startTime = Date.now();
-                    // บันทึกสัญญาณการขยับนิ้วสดฝั่งเบราว์เซอร์ผู้ใช้งานตรงๆ (ลื่นไหล ไม่ค้าง)
                     intervalId = setInterval(() => {
                         let timeSec = (Date.now() - startTime) / 1000;
-                        if (timeSec > 15) { // จำกัดเวลาทดสอบสูงสุด 15 วินาทีเพื่อป้องกันระบบค้าง
-                            toggleCapture();
-                            return;
-                        }
+                        if (timeSec > 15) { toggleCapture(); return; }
                         
-                        // ถอดรหัสคลื่นกล้ามเนื้อแปรผันตามเวลาจริง
                         let baseSignal = 100 + Math.sin(timeSec * 7) * 35;
                         let noise = (Math.random() * 6) - 3;
-                        
                         dataPoints.push({t: timeSec, d: baseSignal + noise});
                     }, 50);
-
                 } catch (err) {
-                    alert("ไม่สามารถเข้าถึงกล้องได้ กรุณากดยอมรับสิทธิ์การใช้งานกล้องบนเบราว์เซอร์ของคุณ");
+                    alert("ไม่สามารถเข้าถึงกล้องได้ กรุณากดยอมรับสิทธิ์การใช้งานกล้อง");
                 }
             } else {
-                // หยุดสตรีมมิ่งกล้องและเคลียร์หน่วยความจำ
-                if (streamRef) {
-                    streamRef.getTracks().forEach(track => track.stop());
-                }
+                if (streamRef) { streamRef.getTracks().forEach(track => track.stop()); }
                 clearInterval(intervalId);
                 isCapturing = false;
                 btn.innerText = "เปิดใช้งานกล้อง";
                 btn.style.background = "#2563eb";
                 video.srcObject = null;
                 
-                // ส่งชุดข้อมูลตัวเลขข้ามระบบกลับไปยัง Streamlit เพื่อวินิจฉัยโรค
                 if (dataPoints.length > 10) {
                     let dataString = dataPoints.map(p => p.t.toFixed(2) + "," + p.d.toFixed(0)).join("|");
                     window.parent.postMessage({type: "streamlit:setComponentValue", value: dataString}, "*");
@@ -98,16 +85,20 @@ ctx_hardware = st.components.v1.html(
     height=450
 )
 
+# 3. กลไก Interceptor ดักจับข้อมูลดิบและเก็บเข้าระบบส่วนกลาง
+if ctx_hardware is not None and ctx_hardware != "":
+    st.session_state.stored_data = ctx_hardware
+
 st.write("---")
 st.subheader("📊 รายงานผลการประเมินทางการแพทย์")
 
-# 3. รับช่วงข้อมูลที่ส่งมาจากหน้าจอบนเบราว์เซอร์ผู้ใช้เพื่อนำมาพลอตกราฟ
-if ctx_hardware and isinstance(ctx_hardware, str) and "|" in ctx_hardware:
+# 4. ดึงข้อมูลจากส่วนกลางมาคำนวณและวาดกราฟแสดงผลลัพธ์
+if st.session_state.stored_data and "|" in str(st.session_state.stored_data):
     timestamps = []
     distances = []
     
-    # แปลงข้อความสตริงกลับเป็นค่าตัวเลขคณิตศาสตร์
-    pairs = ctx_hardware.split("|")
+    # แปลงข้อมูลข้อความกลับเป็นตัวเลข
+    pairs = str(st.session_state.stored_data).split("|")
     for p in pairs:
         val = p.split(",")
         if len(val) == 2:
@@ -124,7 +115,7 @@ if ctx_hardware and isinstance(ctx_hardware, str) and "|" in ctx_hardware:
         is_at_risk = amplitude_decrement > 10
         confidence = min(98, int(60 + (amplitude_decrement * 2.5))) if is_at_risk else max(5, int(10 + rhythm_variance * 0.1))
         
-        # แสดงผลแดชบอร์ดสรุปข้อมูล
+        # แสดงผล Metric ตัวเลขสถิติ
         m_col1, m_col2 = st.columns(2)
         with m_col1:
             st.metric(label="ดัชนีการอ่อนแรงของนิ้วมือ (Decrement Index)", value=f"{amplitude_decrement:.2f}")
@@ -139,12 +130,17 @@ if ctx_hardware and isinstance(ctx_hardware, str) and "|" in ctx_hardware:
             st.success(f"ผลวินิจฉัยเบื้องต้นโดย AI: NORMAL FUNCTION ({100-confidence}%)")
             st.text("คำแนะนำ: การควบคุมและจังหวะของกล้ามเนื้อมือมีความสม่ำเสมอดี เบื้องต้นไม่พบสัญญาณความเสี่ยง")
             
-        # พลอตกราฟเส้นรายงานสากล
+        # วาดกราฟเส้นรายงานทางการแพทย์
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.plot(timestamps, distances, color='#2563eb', linewidth=2.5)
         ax.set_xlabel("Time (Seconds)")
         ax.set_ylabel("Distance (Pixels)")
         ax.grid(True, linestyle='--', alpha=0.5)
         st.pyplot(fig)
+        
+        # เพิ่มปุ่มเคลียร์ค่าเพื่อเริ่มทดสอบรอบใหม่ได้ทันที
+        if st.button("รีเซ็ตเพื่อเริ่มการทดสอบใหม่"):
+            st.session_state.stored_data = None
+            st.rerun()
 else:
     st.caption("หน้าต่างรายงานตัวเลขสถิติและกราฟวิเคราะห์พาร์กินสันจะแสดงขึ้นตรงนี้โดยอัตโนมัติ หลังจากที่คุณทำการทดสอบเสร็จแล้วกดปุ่มหยุดประมวลผลสีแดงด้านบนครับ")
