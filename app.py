@@ -11,9 +11,9 @@ st.set_page_config(
     layout="wide"
 )
 
-# Configuration สำหรับระบบ WebRTC ผ่านเซิร์ฟเวอร์อินเทอร์เน็ตสาธารณะ
+# แก้ไขรูปแบบ ICE Servers ให้ถูกต้องตามมาตรฐานเบราว์เซอร์สากล (ข้าม Error Invalid hostname)
 RTC_CONFIGURATION = RTCConfiguration(
-    {"iceServers": [{"urls": ["stun:://google.com"]}]}
+    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
 )
 
 # 2. ฝังโค้ด CSS สำหรับดีไซน์หน้าเว็บให้สวยงาม โค้งมน มีมิติ
@@ -113,7 +113,7 @@ with col_left:
     st.markdown("### 📸 ระบบกล้องอัจฉริยะผ่านเว็บ (Webcam Terminal)")
     st.info("กรุณากดปุ่ม START ด้านล่าง และกดยอมรับ (Allow) เพื่อให้เบราว์เซอร์เปิดกล้องเว็บแคมของคุณ")
     
-    # ตัวเปิดกล้องยุคใหม่ ทำงานบนระบบคลาวด์ได้อย่างถูกต้อง
+    # ดึงค่าโครงสร้างแบบคลีนส่งเข้าระบบออนไลน์
     ctx = webrtc_streamer(
         key="parkinson-screening",
         video_processor_factory=ParkinsonVideoProcessor,
@@ -126,7 +126,7 @@ with col_right:
     st.markdown("### 📈 สรุปรายงานการวิเคราะห์พฤติกรรม")
     
     # ตรวจสอบปุ่มหยุดทำงานของกล้องเพื่อทำการวิเคราะห์
-    if ctx.state.playing == False and len(st.session_state.distances) > 30:
+    if ctx and not ctx.state.playing and len(st.session_state.distances) > 30:
         distances = st.session_state.distances
         timestamps = st.session_state.timestamps
         
