@@ -4,20 +4,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-# 1. ตั้งค่าโครงสร้างหน้าเว็บแบบขยายเต็มจอ
+# 1. ตั้งค่าโครงสร้างหน้าเว็บและธีมให้ดูสะอาดตา น่าเชื่อถือ
 st.set_page_config(
     page_title="Parkinson Motion Analytics Tool",
     layout="wide"
 )
 
-# 2. ฝังโค้ด CSS สำหรับดีไซน์หน้าเว็บให้สวยงาม โค้งมน และมีมิติ (ลดความดิบแบบ AI)
+# 2. แก้ไขตัวสะกดเป็น unsafe_allow_html=True (ไม่มีตัว e) เพื่อให้ระบบรันผ่าน 100%
 st.markdown("""
     <style>
-        /* ปรับแต่งพื้นหลังและฟอนต์หลัก */
         .main {
             background-color: #fcfcfd;
         }
-        /* ปรับแต่งดีไซน์กล่องหัวข้อขนาดใหญ่ */
         .header-box {
             background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
             padding: 2.5rem;
@@ -32,7 +30,6 @@ st.markdown("""
             font-weight: 700 !important;
             margin-bottom: 0.5rem;
         }
-        /* ปรับแต่งกล่องการ์ดแสดงผลลัพธ์ */
         .result-card-normal {
             background-color: #f0fdf4;
             border-left: 6px solid #16a34a;
@@ -47,14 +44,13 @@ st.markdown("""
             border-radius: 8px;
             margin-bottom: 1rem;
         }
-        /* ตกแต่งกล่อง Metric ตัวเลขสถิติ */
         [data-testid="stMetricValue"] {
             font-size: 2.2rem !important;
             color: #0f172a !important;
             font-weight: 600 !important;
         }
     </style>
-""", unsafe_allowed_html=True)
+""", unsafe_allow_html=True)
 
 # 3. ส่วนหัวเว็บตกแต่งแบบหรูหราด้วยการไล่เฉดสี
 st.markdown("""
@@ -64,7 +60,7 @@ st.markdown("""
             นวัตกรรมคัดกรองและบันทึกแนวโน้มสุขภาพของระบบสั่งการกล้ามเนื้อมือผ่านกล้องวิดีโอทั่วไป
         </p>
     </div>
-""", unsafe_allowed_html=True)
+""", unsafe_allow_html=True)
 
 # สร้างพื้นที่แบ่งฝั่ง ซ้าย-ขวา
 col_left, col_right = st.columns([1, 1.1], gap="large")
@@ -79,7 +75,7 @@ with col_left:
     if "timestamps" not in st.session_state:
         st.session_state.timestamps = []
 
-    # ปรับแต่งปุ่มกดให้ชัดเจน
+    # ปุ่มควบคุมหน้าเว็บขนาดใหญ่
     btn_col1, btn_col2 = st.columns(2)
     with btn_col1:
         if st.button("เปิดกล้องเริ่มทดสอบ", type="primary", use_container_width=True):
@@ -159,7 +155,7 @@ with col_right:
             
         st.write("")
         
-        # ปรับแต่งกล่องข้อความสรุปผลลัพธ์ผ่าน Custom HTML/CSS แทนการใช้กรอบแจ้งเตือนดิบๆ ของ AI
+        # แสดงผลลัพธ์ผ่านบล็อกกล่อง HTML ที่สะท้อนไวยากรณ์ถูกต้อง
         if is_at_risk:
             st.markdown(f"""
                 <div class="result-card-risk">
@@ -169,7 +165,7 @@ with col_right:
                         ซึ่งเป็นสัญญาณสะท้อนของความเหนื่อยล้าของกลุ่มกล้ามเนื้อสั่งการ แนะนำให้เก็บบันทึกผลนี้เพื่อใช้ปรึกษาแพทย์ร่วมด้วย
                     </p>
                 </div>
-            """, unsafe_allowed_html=True)
+            """, unsafe_allow_html=True)
         else:
             st.markdown(f"""
                 <div class="result-card-normal">
@@ -179,7 +175,7 @@ with col_right:
                         ไม่พบบ่งชี้ของการช้าลงหรือระยะกางที่หดแคบลงที่เป็นนัยสำคัญ
                     </p>
                 </div>
-            """, unsafe_allowed_html=True)
+            """, unsafe_allow_html=True)
             
         st.write("")
         st.markdown("**กราฟแสดงทิศทางการกางนิ้วตามจริง (Movement Trace Graph)**")
