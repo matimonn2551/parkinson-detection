@@ -3,17 +3,12 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import time
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
 
 # 1. ตั้งค่าหน้าเว็บแบบขยายเต็มจอ
 st.set_page_config(
     page_title="Parkinson Motion Analytics Tool",
     layout="wide"
-)
-
-# ตั้งค่าระบบเชื่อมต่อกล้องผ่านอินเทอร์เน็ตสาธารณะ (STUN Server ของ Google)
-RTC_CONFIGURATION = RTCConfiguration(
-    {"iceServers": [{"urls": ["stun:://google.com"]}]}
 )
 
 # 2. ฝังโค้ด CSS สำหรับดีไซน์หน้าเว็บให้สวยงาม โค้งมน มีมิติ
@@ -66,7 +61,7 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# เตรียมตารางสำหรับบันทึกผลการทดสอบ
+# เตรียมตารางสำหรับบันทึกผลการทดสอบภายในระบบเซสชัน
 if "distances" not in st.session_state:
     st.session_state.distances = []
 if "timestamps" not in st.session_state:
@@ -113,11 +108,10 @@ with col_left:
     st.markdown("### 📸 หน้าต่างควบคุมระบบกล้อง")
     st.info("กรุณากดปุ่ม START สีดำด้านล่าง และกดปุ่ม อนุญาต (Allow) บนหน้าต่างเบราว์เซอร์เพื่อเปิดระบบกล้อง")
     
-    # ระบบเปิดกล้องอัจฉริยะไร้รอยต่อสำหรับรันบนเว็บไซต์
+    # ถอด RTC_CONFIGURATION ออกเพื่อให้ระบบใช้พอร์ตสากลอัตโนมัติ แก้ปัญหาการ Parsing พังล้มเหลว
     ctx = webrtc_streamer(
         key="parkinson-screening-system",
         video_processor_factory=ParkinsonVideoProcessor,
-        rtc_configuration=RTC_CONFIGURATION,
         media_stream_constraints={"video": True, "audio": False},
     )
 
@@ -149,7 +143,7 @@ with col_right:
             
         st.write("")
         
-        # แสดงผลกล่องรายงาน
+        # แสดงผลกล่องรายงานความเสี่ยงแบบการ์ดมน
         if is_at_risk:
             st.markdown(f"""
                 <div class="result-card-risk">
@@ -174,7 +168,7 @@ with col_right:
         st.write("")
         st.markdown("**กราฟแสดงทิศทางการกางนิ้วตามจริง (Movement Trace Graph)**")
         
-        # พลอตกราฟเส้น
+        # พลอตกราฟเส้นทางการเคลื่อนไหวจริงสไตล์พรีเมียม
         fig, ax = plt.subplots(figsize=(10, 4.5))
         ax.plot(timestamps, distances, color='#2563eb', linewidth=2.5)
         ax.set_xlabel("Time (Seconds)", fontsize=9, color="#64748b")
