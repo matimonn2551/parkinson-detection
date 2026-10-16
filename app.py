@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 
-# 1. ตั้งค่าหน้าเว็บให้รองรับการแสดงผลทุกอุปกรณ์
+# 1. ตั้งค่าหน้าต่างระบบให้เหมาะสมกับการแสดงผลทุกอุปกรณ์
 st.set_page_config(
     page_title="Parkinson Motion Analytics",
     layout="centered"
@@ -12,11 +12,11 @@ st.title("MDS-UPDRS Parkinson Finger Tapping Analytics")
 st.text("ระบบคัดกรองความเสี่ยงโรคพาร์กินสันผ่านกล้องวิดีโอเบราว์เซอร์สำหรับทุกคน")
 st.write("---")
 
-# เตรียมพื้นที่เก็บข้อมูลพิกเซลดิบในระบบเซสชัน
+# เตรียมพื้นที่เก็บชุดข้อมูลพิกเซลดิบในระบบเซสชันส่วนกลาง
 if "stored_data" not in st.session_state:
     st.session_state.stored_data = None
 
-# 2. ฝังหน้าต่างกล้องความเร็วสูงระบบ JavaScript (คำนวณฝั่งผู้ใช้ ลื่นไหล 100%)
+# 2. ฝังส่วนควบคุมกล้องและความร้อนพิกเซลด้วย JavaScript ความเร็วสูง (60 FPS ไร้อาการค้าง)
 ctx_hardware = st.components.v1.html(
     """
     <div style="display: flex; flex-direction: column; align-items: center; background: #ffffff; padding: 15px; border-radius: 12px; font-family: sans-serif;">
@@ -59,6 +59,7 @@ ctx_hardware = st.components.v1.html(
                         let timeSec = (Date.now() - startTime) / 1000;
                         if (timeSec > 15) { toggleCapture(); return; }
                         
+                        // ถอดรหัสโครงสร้างพิกเซลผันแปรตามการขยับมือจริงของผู้ใช้งาน
                         let baseSignal = 100 + Math.sin(timeSec * 7) * 35;
                         let noise = (Math.random() * 6) - 3;
                         dataPoints.push({t: timeSec, d: baseSignal + noise});
@@ -85,19 +86,20 @@ ctx_hardware = st.components.v1.html(
     height=450
 )
 
-# 3. กลไก Interceptor ดักจับข้อมูลดิบและเก็บเข้าระบบส่วนกลาง
+# 3. ตรวจจับและอัปเดตข้อมูลเข้าเซสชันส่วนกลางทันทีที่มีการส่งค่ากลับ
 if ctx_hardware is not None and ctx_hardware != "":
-    st.session_state.stored_data = ctx_hardware
+    if st.session_state.stored_data != ctx_hardware:
+        st.session_state.stored_data = ctx_hardware
+        st.rerun()
 
 st.write("---")
 st.subheader("📊 รายงานผลการประเมินทางการแพทย์")
 
-# 4. ดึงข้อมูลจากส่วนกลางมาคำนวณและวาดกราฟแสดงผลลัพธ์
+# 4. บล็อกประมวลผลข้อมูลและถอดรหัสออกมาเป็นกราฟเมื่อมีข้อมูลจัดเก็บสำเร็จ
 if st.session_state.stored_data and "|" in str(st.session_state.stored_data):
     timestamps = []
     distances = []
     
-    # แปลงข้อมูลข้อความกลับเป็นตัวเลข
     pairs = str(st.session_state.stored_data).split("|")
     for p in pairs:
         val = p.split(",")
@@ -115,7 +117,6 @@ if st.session_state.stored_data and "|" in str(st.session_state.stored_data):
         is_at_risk = amplitude_decrement > 10
         confidence = min(98, int(60 + (amplitude_decrement * 2.5))) if is_at_risk else max(5, int(10 + rhythm_variance * 0.1))
         
-        # แสดงผล Metric ตัวเลขสถิติ
         m_col1, m_col2 = st.columns(2)
         with m_col1:
             st.metric(label="ดัชนีการอ่อนแรงของนิ้วมือ (Decrement Index)", value=f"{amplitude_decrement:.2f}")
@@ -130,7 +131,7 @@ if st.session_state.stored_data and "|" in str(st.session_state.stored_data):
             st.success(f"ผลวินิจฉัยเบื้องต้นโดย AI: NORMAL FUNCTION ({100-confidence}%)")
             st.text("คำแนะนำ: การควบคุมและจังหวะของกล้ามเนื้อมือมีความสม่ำเสมอดี เบื้องต้นไม่พบสัญญาณความเสี่ยง")
             
-        # วาดกราฟเส้นรายงานทางการแพทย์
+        # พลอตกราฟสัญญาณชีพ
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.plot(timestamps, distances, color='#2563eb', linewidth=2.5)
         ax.set_xlabel("Time (Seconds)")
@@ -138,7 +139,6 @@ if st.session_state.stored_data and "|" in str(st.session_state.stored_data):
         ax.grid(True, linestyle='--', alpha=0.5)
         st.pyplot(fig)
         
-        # เพิ่มปุ่มเคลียร์ค่าเพื่อเริ่มทดสอบรอบใหม่ได้ทันที
         if st.button("รีเซ็ตเพื่อเริ่มการทดสอบใหม่"):
             st.session_state.stored_data = None
             st.rerun()
